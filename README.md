@@ -2,11 +2,12 @@
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-A delayed-heal mod for **GTA: San Andreas 2.10** on Android (Android Mod
-Loader / FLA). Instead of an instant refill, your health regenerates
-tick-by-tick after a configurable delay without damage, so police chases,
-low-health escapes and hunger still matter. Built for players who want the
-convenience of auto-regen without the arcade feel.
+A delayed-heal mod for **GTA: San Andreas** on Android (Android Mod Loader /
+FLA), supporting **2.10 (arm64)** and **2.00 (armv7)**. Instead of an instant
+refill, your health regenerates tick-by-tick after a configurable delay
+without damage, so police chases, low-health escapes and hunger still matter.
+Built for players who want the convenience of auto-regen without the arcade
+feel.
 
 ## Table of contents
 
@@ -20,8 +21,14 @@ convenience of auto-regen without the arcade feel.
 
 ## Install
 
-1. Copy `libAML_PSDK_HealthRegen64.so` (arm64) — or
-   `libAML_PSDK_HealthRegen.so` (armv7) — to the mods folder:
+Pick the `.so` for your game version:
+
+| Game version | Architecture | File |
+| --- | --- | --- |
+| 2.10 | arm64-v8a | `libAML_PSDK_HealthRegen64.so` |
+| 2.00 | armeabi-v7a | `libAML_PSDK_HealthRegen.so` |
+
+1. Copy the matching `.so` to the mods folder:
 
    ```bash
    /sdcard/Android/data/com.rockstargames.gtasa/mods/
@@ -34,8 +41,10 @@ convenience of auto-regen without the arcade feel.
    ```
 
 > [!NOTE]
-> Requires a game build with Android Mod Loader / FLA installed. Tested on
-> GTA: SA 2.10 arm64.
+> Requires a game build with Android Mod Loader / FLA installed. The game
+> version is detected from the process ABI — the 2.10 APK ships arm64-only
+> and the 2.00 APK ships armv7-only, so each build carries its own verified
+> offsets (`Verify it loaded` shows which one is active).
 
 ## Configuration
 
@@ -93,8 +102,10 @@ Expected output:
 
 ```
 I AndroidModLoader: Mod (GUID net.psdk.samod.regen) has been preprocessed.
-I HealthRegen: Auto Health Regen loaded. Delay=5.0s Rate=2.0 HP/s Cap=65% Min=15% Wanted=OFF Armor=OFF
+I HealthRegen: Auto Health Regen loaded [2.10 (arm64)]. Delay=5.0s Rate=2.0 HP/s Cap=65% Min=15% Wanted=OFF Armor=OFF
 ```
+
+On a 2.00 (armv7) game the bracketed variant reads `[2.00 (armv7)]`.
 
 ## Building from source
 
@@ -112,16 +123,19 @@ Outputs:
 
 ## Verified offsets
 
-All symbols are resolved at runtime from `libGTASA.so` 2.10 (arm64) dynamic
-symbols — no hard-coded addresses. Only the struct offsets below are
-hard-coded, verified against the modded APK binary:
+All symbols are resolved at runtime from the game's dynamic symbols — no
+hard-coded addresses. Only the struct offsets below are hard-coded, verified
+by disassembling the shipped binaries (the `CPed` constructor stores
+`100.0/100.0/0.0` at the health/maxHealth/armour fields, the cheat
+`MoneyArmourHealthCheat` writes armour, and `CWanted::Update` reads the wanted
+level):
 
-| Field | Offset |
-| --- | --- |
-| `CPed::m_fHealth` | `+0x6AC` |
-| `CPed::m_fMaxHealth` | `+0x6B0` |
-| `CPed::m_fArmour` | `+0x6B4` |
-| `CWanted::m_nWantedLevel` | `+0x2C` |
+| Field | 2.10 (arm64) | 2.00 (armv7) |
+| --- | --- | --- |
+| `CPed::m_fHealth` | `+0x6AC` | `+0x544` |
+| `CPed::m_fMaxHealth` | `+0x6B0` | `+0x548` |
+| `CPed::m_fArmour` | `+0x6B4` | `+0x54C` |
+| `CWanted::m_nWantedLevel` | `+0x2C` | `+0x2C` |
 
 ## License
 

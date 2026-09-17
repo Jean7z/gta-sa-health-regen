@@ -6,16 +6,27 @@
 
 #include <cstdint>
 
-MYMODCFG(net.psdk.samod.regen, SA Android Auto Health Regeneration, 1.0, Jean7z)
+MYMODCFG(net.psdk.samod.regen, SA Android Auto Health Regeneration, 1.1, Jean7z)
 
 static ConfigEntry *cfgDelay, *cfgRate, *cfgCap, *cfgMinHealth, *cfgWhileWanted, *cfgArmorRegen;
 
+/* libGTASA.so offsets - verified by disassembly of the shipped binaries:
+ *   2.10 (arm64): CPed ctor stores 100.0f at +0x6ac/+0x6b0, 0.0f at +0x6b4.
+ *   2.00 (armv7): CPed ctor stores 100.0f at +0x544/+0x548, 0.0f at +0x54c.
+ *   CWanted level read at +0x2c in CWanted::Update (both).
+ * The ABI already selects the build: the 2.10 APK ships arm64-only and the
+ * 2.00 APK ships armv7-only, so __aarch64__ <=> 2.10 / else <=> 2.00. */
 #if defined(__aarch64__)
-
-/* libGTASA.so 2.10 (arm64) offsets - verified against the modded APK */
 #define CPED_HEALTH     0x6ACu /* CPed::m_fHealth */
 #define CPED_MAXHEALTH  0x6B0u /* CPed::m_fMaxHealth */
 #define CPED_ARMOUR     0x6B4u /* CPed::m_fArmour */
+#define GAME_VARIANT    "2.10 (arm64)"
+#else
+#define CPED_HEALTH     0x544u /* CPed::m_fHealth */
+#define CPED_MAXHEALTH  0x548u /* CPed::m_fMaxHealth */
+#define CPED_ARMOUR     0x54Cu /* CPed::m_fArmour */
+#define GAME_VARIANT    "2.00 (armv7)"
+#endif
 #define CWANTED_LEVEL   0x2Cu  /* CWanted::m_nWantedLevel */
 
 struct CPlayerInfo; /* opaque: we only forward the pointer */
@@ -48,8 +59,8 @@ static void ResetRegenState(float health, float armour, uint32_t now)
 }
 
 /* CPlayerInfo::Process(int): hooked in ON_MOD_LOAD. Runs vanilla logic first,
- * then applies the delayed heal. All symbols/offsets were verified against
- * libGTASA.so 2.10 arm64 in the modded APK. */
+ * then applies the delayed heal. Symbols/offsets verified against both
+ * libGTASA.so 2.10 (arm64) and 2.00 (armv7) in the modded APKs. */
 DECL_HOOK(void, CPlayerInfo__Process, CPlayerInfo* _this, int pad)
 {
     CPlayerInfo__Process(_this, pad);
@@ -126,8 +137,6 @@ DECL_HOOK(void, CPlayerInfo__Process, CPlayerInfo* _this, int pad)
     }
 }
 
-#endif /* __aarch64__ */
-
 ON_MOD_LOAD()
 {
     logger->SetTag("HealthRegen");
@@ -139,7 +148,6 @@ ON_MOD_LOAD()
     cfgWhileWanted = cfg->Bind("EnableWhileWanted", false, "Regen");
     cfgArmorRegen = cfg->Bind("EnableArmorRegen", false, "Regen");
 
-#if defined(__aarch64__)
     pFindPlayerPed    = (FindPlayerPedFn)GetMainLibrarySymbol("_Z13FindPlayerPedi");
     pIsAlive          = (IsAliveFn)GetMainLibrarySymbol("_ZNK4CPed7IsAliveEv");
     pRestartDeath     = (RestartFn)GetMainLibrarySymbol("_ZN11CPlayerInfo22IsRestartingAfterDeathEv");
@@ -157,12 +165,9 @@ ON_MOD_LOAD()
 
     HOOK(CPlayerInfo__Process, GetMainLibrarySymbol("_ZN11CPlayerInfo7ProcessEi"));
 
-    logger->Info("Auto Health Regen loaded. Delay=%.1fs Rate=%.1f HP/s Cap=%d%% Min=%d%% Wanted=%s Armor=%s",
-        cfgDelay->GetFloat(), cfgRate->GetFloat(), (int)cfgCap->GetFloat(),
+    logger->Info("Auto Health Regen loaded [%s]. Delay=%.1fs Rate=%.1f HP/s Cap=%d%% Min=%d%% Wanted=%s Armor=%s",
+        GAME_VARIANT, cfgDelay->GetFloat(), cfgRate->GetFloat(), (int)cfgCap->GetFloat(),
         (int)cfgMinHealth->GetFloat(),
         cfgWhileWanted->GetBool() ? "ON" : "OFF",
         cfgArmorRegen->GetBool() ? "ON" : "OFF");
-#else
-    logger->Info("Auto Health Regen is arm64-only, skipped");
-#endif
 }
