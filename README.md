@@ -2,12 +2,10 @@
 
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-A delayed-heal mod for **GTA: San Andreas** on Android (Android Mod Loader /
-FLA), supporting **2.10 (arm64)** and **2.00 (armv7)**. Instead of an instant
-refill, your health regenerates tick-by-tick after a configurable delay
-without damage, so police chases, low-health escapes and hunger still matter.
-Built for players who want the convenience of auto-regen without the arcade
-feel.
+A delayed-heal mod for GTA: San Andreas on Android (Android Mod Loader / FLA),
+supporting 2.10 (arm64) and 2.00 (armv7). Instead of an instant refill, your
+health regenerates tick-by-tick after a configurable delay without damage.
+Police chases and low health stay dangerous, and hunger is untouched.
 
 ## Table of contents
 
@@ -42,7 +40,7 @@ Pick the `.so` for your game version:
 
 > [!NOTE]
 > Requires a game build with Android Mod Loader / FLA installed. The game
-> version is detected from the process ABI — the 2.10 APK ships arm64-only
+> version is detected from the process ABI: the 2.10 APK ships arm64-only
 > and the 2.00 APK ships armv7-only, so each build carries its own verified
 > offsets (`Verify it loaded` shows which one is active).
 
@@ -89,8 +87,8 @@ Regeneration is disabled while you are wasted or busted (death/arrest
 animations), while a scripted cutscene is running (`CCutsceneMgr::ms_running`),
 and while you have wanted stars (unless `EnableWhileWanted = 1`).
 
-The mod does not touch hunger, Fat or Muscle stats, adds no HUD popups and no
-sounds — the vanilla low-HP flash stays.
+The mod does not touch hunger, Fat, or Muscle stats, and it adds no HUD popups
+or sounds. The vanilla low-HP flash stays.
 
 ## Verify it loaded
 
