@@ -5,7 +5,7 @@
 #include <aml-psdk/game_sa/plugin.h>
 
 #include <cstdint>
-#include <cstdlib> /* atof */
+#include <cstdlib> /* strtod */
 
 MYMODCFG(net.psdk.samod.regen, SA Android Auto Health Regeneration, 1.3, Jean7z)
 
@@ -217,9 +217,21 @@ ON_MOD_LOAD()
 
             char* end = NULL;
             const double parsed = strtod(v, &end);
-            if(end == v || (end && *end != '\0'))
+
+            /* Tolerate trailing whitespace like the rest of the config code
+             * (Config::GetFloat/Config::Bind parse leniently), but reject any
+             * other trailing content. */
+            const char* t = end;
+            while(*t == ' ' || *t == '\t' || *t == '\r' || *t == '\n') ++t;
+            if(end == v || *t != '\0')
             {
                 logger->Info("Ignoring legacy '%s' (unparsable value '%s')", a.oldKey, v);
+                continue;
+            }
+
+            if(!(parsed == parsed) || parsed > 1e30 || parsed < -1e30)
+            {
+                logger->Info("Ignoring legacy '%s' (non-finite value '%s')", a.oldKey, v);
                 continue;
             }
 
