@@ -50,22 +50,36 @@ All values live in the `[Regen]` section:
 
 ```ini
 [Regen]
-RegenDelay = 5.0        ; seconds without damage before healing starts
-RegenRate = 2.0         ; HP per second (health and armour use the same rate)
-RegenCap = 65.0         ; stop healing at 65% of max health
-MinHealthToRegen = 15.0 ; never heal below 15% of max health
+RegenDelay = 5.0        ; seconds without damage before health healing starts
+RegenRate = 2.0         ; health HP per second
+RegenCap = 65.0         ; stop health healing at 65% of max health
+MinHealthToRegen = 15.0 ; never heal health below 15% of max health
 EnableWhileWanted = 0   ; 1 = also heal while chased by the police
-EnableArmorRegen = 0    ; 1 = also regenerate armour (caps at 100)
+EnableArmorRegen = 0    ; 1 = master switch for armour regen
+ArmorRegenRate = 2.0    ; armour HP per second
+ArmorRegenCap = 100.0   ; stop armour healing at 100% (armour maxes at 100)
+ArmorRegenDelay = 5.0   ; seconds without damage before armour healing starts
 ```
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `RegenDelay` | float | `5.0` | Seconds without damage before healing starts. |
-| `RegenRate` | float | `2.0` | Health (and armour) restored per second. |
-| `RegenCap` | float | `65.0` | Stop healing at this % of max health. |
-| `MinHealthToRegen` | float | `15.0` | Never start healing below this % of max health. |
+| `RegenDelay` | float | `5.0` | Seconds without damage before health healing starts. |
+| `RegenRate` | float | `2.0` | Health restored per second. |
+| `RegenCap` | float | `65.0` | Stop health healing at this % of max health. |
+| `MinHealthToRegen` | float | `15.0` | Never start health healing below this % of max health. |
 | `EnableWhileWanted` | bool | `0` | Set to `1` to heal while pursued. |
-| `EnableArmorRegen` | bool | `0` | Set to `1` to also regenerate armour. |
+| `EnableArmorRegen` | bool | `0` | Master switch for armour regen. When `1`, armour regenerates using its own independent settings below. |
+| `ArmorRegenRate` | float | `2.0` | Armour restored per second. Independent of `RegenRate`. |
+| `ArmorRegenCap` | float | `100.0` | Stop armour healing at this % (clamped to 100, since armour maxes at 100 in SA). |
+| `ArmorRegenDelay` | float | `5.0` | Seconds without damage before armour healing starts. Independent of `RegenDelay`. |
+
+> [!IMPORTANT]
+> Health and armour regen are **fully decoupled**. Armour has its own window,
+> delay and rate, and no longer depends on the health being inside
+> `[MinHealthToRegen, RegenCap]`. With the default `RegenCap = 65.0`, health
+> stops healing at 65%, but armour keeps regenerating up to `ArmorRegenCap`
+> (100% by default) as long as `EnableArmorRegen = 1`.
+
 
 > [!TIP]
 > For a stricter, more vanilla-feeling setup: `RegenDelay = 6.0` and
@@ -82,6 +96,12 @@ first, then:
 
 The rate is non-linear: faster right after the delay ends, easing off as you
 approach the cap, so topping off is the slow part.
+
+Armour regen (when `EnableArmorRegen = 1`) runs on its own independent track:
+its own window (any armour below `ArmorRegenCap`), its own `ArmorRegenDelay`
+against the same "last damage" timestamp, and its own `ArmorRegenRate`. It does
+**not** require the health to be inside `[MinHealthToRegen, RegenCap]`, so
+armour keeps filling up to 100% even after health has stopped at its cap.
 
 Regeneration is disabled while you are wasted or busted (death/arrest
 animations), while a scripted cutscene is running (`CCutsceneMgr::ms_running`),
@@ -101,6 +121,7 @@ Expected output:
 ```
 I AndroidModLoader: Mod (GUID net.psdk.samod.regen) has been preprocessed.
 I HealthRegen: Auto Health Regen loaded [2.10 (arm64)]. Delay=5.0s Rate=2.0 HP/s Cap=65% Min=15% Wanted=OFF Armor=OFF
+I HealthRegen: Armor regen: ArmorRate=2.0 ArmorCap=100% ArmorDelay=5.0s
 ```
 
 On a 2.00 (armv7) game the bracketed variant reads `[2.00 (armv7)]`.

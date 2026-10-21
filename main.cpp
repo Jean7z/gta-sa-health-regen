@@ -6,9 +6,10 @@
 
 #include <cstdint>
 
-MYMODCFG(net.psdk.samod.regen, SA Android Auto Health Regeneration, 1.1, Jean7z)
+MYMODCFG(net.psdk.samod.regen, SA Android Auto Health Regeneration, 1.2, Jean7z)
 
 static ConfigEntry *cfgDelay, *cfgRate, *cfgCap, *cfgMinHealth, *cfgWhileWanted, *cfgArmorRegen;
+static ConfigEntry *cfgArmorRegenRate, *cfgArmorRegenCap, *cfgArmorRegenDelay;
 
 /* libGTASA.so offsets - verified by disassembly of the shipped binaries:
  *   2.10 (arm64): CPed ctor stores 100.0f at +0x6ac/+0x6b0, 0.0f at +0x6b4.
@@ -95,44 +96,72 @@ DECL_HOOK(void, CPlayerInfo__Process, CPlayerInfo* _this, int pad)
         { s_lastDamageMs = now; return; }
     }
 
-    /* Regeneration window (% of max health). */
+    /* Regeneration windows (% of max health). Health and armour are fully
+     * decoupled: armour uses its own window/delay/rate and does NOT require
+     * the health to be inside [minH, capH]. */
     const float minH = maxHealth * (cfgMinHealth->GetFloat() / 100.0f);
     const float capH = maxHealth * (cfgCap->GetFloat() / 100.0f);
-    if(health <= minH || health >= capH) return;
 
-    /* Delay since last damage. */
-    const uint32_t delayMs = (uint32_t)(cfgDelay->GetFloat() * 1000.0f);
-    if(now - s_lastDamageMs < delayMs) return;
-
-    /* Tick: rate (HP/s) * dt, eased near the cap. */
+    /* Tick: computed BEFORE the gates so armour can advance independently of
+     * the health window. Rate (HP/s) * dt, eased near each cap. */
     uint32_t dt = now - s_lastTickMs;
     if(dt > 500u) dt = 500u; /* clamp pauses / hitches */
     s_lastTickMs = now;
-
-    float progress = (health - minH) / (capH - minH);
-    if(progress < 0.0f) progress = 0.0f;
-    if(progress > 1.0f) progress = 1.0f;
-    const float mult = 1.0f - 0.8f * progress; /* 1.0 near minH -> 0.2 near cap */
-
     const float dtSec = (float)dt / 1000.0f;
-    float heal = cfgRate->GetFloat() * mult * dtSec;
-    if(heal > 0.0f)
+
+    /* --- Health: unchanged window/behaviour [minH, capH] on max health. --- */
+    if(health > minH && health < capH)
     {
-        health += heal;
-        if(health > capH) health = capH;
-        *(float*)((uintptr_t)ped + CPED_HEALTH) = health;
-        s_lastHealth = health;
+        const uint32_t delayMs = (uint32_t)(cfgDelay->GetFloat() * 1000.0f);
+        if(now - s_lastDamageMs >= delayMs)
+        {
+            float progress = (health - minH) / (capH - minH);
+            if(progress < 0.0f) progress = 0.0f;
+            if(progress > 1.0f) progress = 1.0f;
+            const float mult = 1.0f - 0.8f * progress; /* 1.0 near minH -> 0.2 near cap */
+
+            float heal = cfgRate->GetFloat() * mult * dtSec;
+            if(heal > 0.0f)
+            {
+                health += heal;
+                if(health > capH) health = capH;
+                *(float*)((uintptr_t)ped + CPED_HEALTH) = health;
+                s_lastHealth = health;
+            }
+        }
     }
 
+    /* --- Armour: independent window/delay/rate. --- */
     if(cfgArmorRegen->GetBool())
     {
-        float aHeal = cfgRate->GetFloat() * mult * dtSec;
-        if(aHeal > 0.0f)
+        /* Own window: armour regenerates whenever it is below its cap
+         * (armourMin = 0, so it never depends on the health window).
+         * Armour maxes at 100 in SA, so clamp the cap to 100. */
+        const float armourMin = 0.0f;
+        float armourCap = 100.0f * (cfgArmorRegenCap->GetFloat() / 100.0f);
+        if(armourCap > 100.0f) armourCap = 100.0f;
+
+        if(armour > armourMin && armour < armourCap)
         {
-            armour += aHeal;
-            if(armour > 100.0f) armour = 100.0f; /* armor maxes at 100 in SA */
-            *(float*)((uintptr_t)ped + CPED_ARMOUR) = armour;
-            s_lastArmour = armour;
+            const uint32_t aDelayMs = (uint32_t)(cfgArmorRegenDelay->GetFloat() * 1000.0f);
+            if(now - s_lastDamageMs >= aDelayMs)
+            {
+                /* Own easing: slow down as armour approaches its cap. */
+                float armourProgress = armour / armourCap;
+                if(armourProgress < 0.0f) armourProgress = 0.0f;
+                if(armourProgress > 1.0f) armourProgress = 1.0f;
+                const float multArmor = 1.0f - 0.8f * armourProgress;
+
+                float aHeal = cfgArmorRegenRate->GetFloat() * multArmor * dtSec;
+                if(aHeal > 0.0f)
+                {
+                    armour += aHeal;
+                    if(armour > armourCap) armour = armourCap;
+                    if(armour > 100.0f) armour = 100.0f; /* armor maxes at 100 in SA */
+                    *(float*)((uintptr_t)ped + CPED_ARMOUR) = armour;
+                    s_lastArmour = armour;
+                }
+            }
         }
     }
 }
@@ -147,6 +176,9 @@ ON_MOD_LOAD()
     cfgMinHealth  = cfg->Bind("MinHealthToRegen", 15.0f, "Regen");
     cfgWhileWanted = cfg->Bind("EnableWhileWanted", false, "Regen");
     cfgArmorRegen = cfg->Bind("EnableArmorRegen", false, "Regen");
+    cfgArmorRegenRate  = cfg->Bind("ArmorRegenRate", 2.0f, "Regen");
+    cfgArmorRegenCap   = cfg->Bind("ArmorRegenCap", 100.0f, "Regen");
+    cfgArmorRegenDelay = cfg->Bind("ArmorRegenDelay", 5.0f, "Regen");
 
     pFindPlayerPed    = (FindPlayerPedFn)GetMainLibrarySymbol("_Z13FindPlayerPedi");
     pIsAlive          = (IsAliveFn)GetMainLibrarySymbol("_ZNK4CPed7IsAliveEv");
@@ -170,4 +202,6 @@ ON_MOD_LOAD()
         (int)cfgMinHealth->GetFloat(),
         cfgWhileWanted->GetBool() ? "ON" : "OFF",
         cfgArmorRegen->GetBool() ? "ON" : "OFF");
+    logger->Info("Armor regen: ArmorRate=%.1f ArmorCap=%.0f%% ArmorDelay=%.1fs",
+        cfgArmorRegenRate->GetFloat(), cfgArmorRegenCap->GetFloat(), cfgArmorRegenDelay->GetFloat());
 }
