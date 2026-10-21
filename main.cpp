@@ -5,8 +5,9 @@
 #include <aml-psdk/game_sa/plugin.h>
 
 #include <cstdint>
+#include <cstdlib> /* atof */
 
-MYMODCFG(net.psdk.samod.regen, SA Android Auto Health Regeneration, 1.2, Jean7z)
+MYMODCFG(net.psdk.samod.regen, SA Android Auto Health Regeneration, 1.3, Jean7z)
 
 static ConfigEntry *cfgDelay, *cfgRate, *cfgCap, *cfgMinHealth, *cfgWhileWanted, *cfgArmorRegen;
 static ConfigEntry *cfgArmorRegenRate, *cfgArmorRegenCap, *cfgArmorRegenDelay;
@@ -170,15 +171,63 @@ ON_MOD_LOAD()
 {
     logger->SetTag("HealthRegen");
 
-    cfgDelay      = cfg->Bind("RegenDelay", 5.0f, "Regen");
-    cfgRate       = cfg->Bind("RegenRate", 2.0f, "Regen");
-    cfgCap        = cfg->Bind("RegenCap", 65.0f, "Regen");
-    cfgMinHealth  = cfg->Bind("MinHealthToRegen", 15.0f, "Regen");
+    if(!cfg || !cfg->IsInitialized()) { logger->Error("HealthRegen: config not initialised, mod disabled"); return; }
+
+    /* The keys now carry their unit in the name so the .ini is unambiguous
+     * (% of max health vs HP/s vs seconds). Old (<=1.2) names are still read
+     * as aliases and migrate automatically, see below. */
+    cfgDelay      = cfg->Bind("HealthRegenDelay", 5.0f, "Regen");  /* seconds */
+    cfgRate       = cfg->Bind("HealthRegenRate", 2.0f, "Regen");   /* HP/s */
+    cfgCap        = cfg->Bind("HealthRegenCapPct", 65.0f, "Regen");   /* % of max health */
+    cfgMinHealth  = cfg->Bind("HealthRegenMinPct", 15.0f, "Regen");   /* % of max health */
     cfgWhileWanted = cfg->Bind("EnableWhileWanted", false, "Regen");
     cfgArmorRegen = cfg->Bind("EnableArmorRegen", false, "Regen");
-    cfgArmorRegenRate  = cfg->Bind("ArmorRegenRate", 2.0f, "Regen");
-    cfgArmorRegenCap   = cfg->Bind("ArmorRegenCap", 100.0f, "Regen");
-    cfgArmorRegenDelay = cfg->Bind("ArmorRegenDelay", 5.0f, "Regen");
+    cfgArmorRegenRate  = cfg->Bind("ArmorRegenRate", 2.0f, "Regen");   /* HP/s */
+    cfgArmorRegenCap   = cfg->Bind("ArmorRegenCapPct", 100.0f, "Regen"); /* % of armour */
+    cfgArmorRegenDelay = cfg->Bind("ArmorRegenDelay", 5.0f, "Regen");    /* seconds */
+
+    /* Legacy key migration (1.2 and older). If the .ini still contains an old
+     * key name and the user did NOT set the new key, copy the old value into
+     * the new entry (SetFloat marks it changed, so cfg->Save() persists it).
+     *
+     * Detection uses cfg->TryGetRaw(), a PURE READ (no side effects, no key
+     * creation, no Save). We deliberately do NOT use cfg->HasKey() (AML 1.4.0+
+     * vtable slot, UB on older AML) nor cfg->GetString() (which writes the key
+     * back on a miss and would dirty the .ini). TryGetRaw only uses
+     * m_pICFG->GetValueFrom(), part of ICFG v1.
+     *
+     * ICFG v1 has no key-deletion API, so the legacy key is left in the .ini;
+     * it is harmless and is not migrated again because once propagated the new
+     * entry's LoadedUndefault() becomes true, skipping this block. */
+    {
+        struct AliasFix { const char* oldKey; const char* newKey; ConfigEntry* entry; };
+        const AliasFix aliases[] = {
+            { "RegenDelay",       "HealthRegenDelay",   cfgDelay },
+            { "RegenRate",        "HealthRegenRate",    cfgRate },
+            { "RegenCap",         "HealthRegenCapPct",  cfgCap },
+            { "MinHealthToRegen", "HealthRegenMinPct",  cfgMinHealth },
+            { "ArmorRegenCap",    "ArmorRegenCapPct",   cfgArmorRegenCap },
+        };
+        for(const AliasFix& a : aliases)
+        {
+            if(!a.entry || a.entry->LoadedUndefault()) continue;
+
+            const char* v = cfg->TryGetRaw(a.oldKey, "Regen");
+            if(!v) continue; /* legacy key absent: nothing to migrate */
+
+            char* end = NULL;
+            const double parsed = strtod(v, &end);
+            if(end == v || (end && *end != '\0'))
+            {
+                logger->Info("Ignoring legacy '%s' (unparsable value '%s')", a.oldKey, v);
+                continue;
+            }
+
+            a.entry->SetFloat((float)parsed);
+            logger->Info("Migrated legacy '%s' -> '%s' (=%.1f)", a.oldKey, a.newKey, (float)parsed);
+        }
+    }
+    cfg->Save();
 
     pFindPlayerPed    = (FindPlayerPedFn)GetMainLibrarySymbol("_Z13FindPlayerPedi");
     pIsAlive          = (IsAliveFn)GetMainLibrarySymbol("_ZNK4CPed7IsAliveEv");
@@ -197,11 +246,11 @@ ON_MOD_LOAD()
 
     HOOK(CPlayerInfo__Process, GetMainLibrarySymbol("_ZN11CPlayerInfo7ProcessEi"));
 
-    logger->Info("Auto Health Regen loaded [%s]. Delay=%.1fs Rate=%.1f HP/s Cap=%d%% Min=%d%% Wanted=%s Armor=%s",
-        GAME_VARIANT, cfgDelay->GetFloat(), cfgRate->GetFloat(), (int)cfgCap->GetFloat(),
-        (int)cfgMinHealth->GetFloat(),
+    logger->Info("Auto Health Regen loaded [%s]. HealthDelay=%.1fs HealthRate=%.1f HP/s HealthCapPct=%.1f%% HealthMinPct=%.1f%% Wanted=%s Armor=%s",
+        GAME_VARIANT, cfgDelay->GetFloat(), cfgRate->GetFloat(), cfgCap->GetFloat(),
+        cfgMinHealth->GetFloat(),
         cfgWhileWanted->GetBool() ? "ON" : "OFF",
         cfgArmorRegen->GetBool() ? "ON" : "OFF");
-    logger->Info("Armor regen: ArmorRate=%.1f ArmorCap=%.0f%% ArmorDelay=%.1fs",
+    logger->Info("Armor regen: ArmorRate=%.1f HP/s ArmorCapPct=%.1f%% ArmorDelay=%.1fs",
         cfgArmorRegenRate->GetFloat(), cfgArmorRegenCap->GetFloat(), cfgArmorRegenDelay->GetFloat());
 }

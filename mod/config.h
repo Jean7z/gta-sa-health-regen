@@ -38,6 +38,11 @@ public:
     ConfigEntry* Bind(const char* szKey, bool bDefaultValue, const char* szSection = "Preferences");
     ConfigEntry* Bind(const char* szKey, rgba_t clrDefaultValue, const char* szSection = "Preferences");
     
+    // Pure read: NO side effects (does NOT create the key, does NOT Save).
+    // Compatible with ICFG v1 (AML < 1.4.0). Returns NULL if the key is
+    // absent or empty.
+    const char*  TryGetRaw(const char* szKey, const char* szSection = "Preferences");
+
     // FAST GET. NO NEED TO CLEAN THE MEMORY.
     const char*  GetString(const char* szKey, const char* szDefaultValue, const char* szSection = "Preferences"); // Unsafe
     int          GetInt(const char* szKey, int nDefaultValue, const char* szSection = "Preferences");
@@ -53,6 +58,7 @@ public:
     void         GetString(char* out, size_t outLen, const char* szKey, const char* szDefaultValue, const char* szSection = "Preferences");
 
     // Self-explained
+    inline bool  IsInitialized() { return m_bInitialized; }
     inline bool  IsValueChanged() { return m_bValueChanged; }
     inline void  ClearLast();
     

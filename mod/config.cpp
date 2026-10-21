@@ -216,6 +216,14 @@ const char* Config::GetString(const char* szKey, const char* szDefaultValue, con
     return tryToGetValue;
 }
 
+const char* Config::TryGetRaw(const char* szKey, const char* szSection)
+{
+    if(!m_bInitialized) return NULL;
+
+    const char* v = m_pICFG->GetValueFrom(m_iniMyConfig, szSection, szKey);
+    return (v && v[0]) ? v : NULL; /* NULL = absent or empty; NO write, NO Save */
+}
+
 int Config::GetInt(const char* szKey, int nDefaultValue, const char* szSection)
 {
     if(!m_bInitialized) return 0;
